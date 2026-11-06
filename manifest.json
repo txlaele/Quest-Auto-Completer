@@ -1,12 +1,13 @@
 {
   "name": "Quest Auto Completer",
-  "description": "Auto complete Discord Quests on mobile",
+  "description": "Auto complete Discord Quests on mobile with PC spoofing",
   "authors": [
     {
       "name": "Crxa",
       "id": "000000000000000000"
     }
   ],
+  "main": "index.js",
   "id": "crxa.quest-auto-completer",
   "version": "1.0.0",
   "icon": "GameControllerIcon"

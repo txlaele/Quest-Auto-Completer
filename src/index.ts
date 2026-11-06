@@ -1,10 +1,64 @@
-import { findByProps, findByStoreName } from "@revenge-mod/modules/finders";
-import { FluxDispatcher } from "@revenge-mod/modules/common";
-import { storage } from "@revenge-mod/storage";
+// ─── Revenge / Vendetta Runtime Resolver ──────────────────────────────────────
 
-// ─── Storage / Settings ──────────────────────────────────────────────────────
+function getGlobal(): any {
+    return (
+        (typeof globalThis !== "undefined" && globalThis) ||
+        (typeof window !== "undefined" && window) ||
+        (typeof global !== "undefined" && global) ||
+        {}
+    );
+}
 
-const pluginStorage = storage.createProxy({
+const g = getGlobal();
+const clientMod = g.revenge || g.vendetta;
+
+function findByProps(...props: string[]): any {
+    const finder =
+        clientMod?.modules?.findByProps ||
+        clientMod?.metro?.findByProps ||
+        clientMod?.modules?.finders?.findByProps;
+    if (typeof finder === "function") {
+        return finder(...props);
+    }
+    return null;
+}
+
+function findByStoreName(name: string): any {
+    const finder =
+        clientMod?.modules?.findByStoreName ||
+        clientMod?.metro?.findByStoreName ||
+        clientMod?.modules?.finders?.findByStoreName;
+    if (typeof finder === "function") {
+        return finder(name);
+    }
+    return null;
+}
+
+function getFluxDispatcher(): any {
+    return (
+        clientMod?.modules?.common?.FluxDispatcher ||
+        clientMod?.metro?.common?.FluxDispatcher ||
+        findByProps("dispatch", "subscribe")
+    );
+}
+
+function getStorageProxy(name: string, defaults: any): any {
+    try {
+        if (clientMod?.storage?.createProxy) {
+            return clientMod.storage.createProxy(defaults);
+        }
+        if (clientMod?.storage?.createStorage) {
+            return clientMod.storage.createStorage(name, defaults);
+        }
+    } catch {
+        // fallback
+    }
+    return defaults;
+}
+
+// ─── Settings ────────────────────────────────────────────────────────────────
+
+const pluginStorage = getStorageProxy("quest-auto-completer", {
     /** "parallel" = all quests at once, "sequential" = one at a time */
     mode: "parallel" as "parallel" | "sequential",
     /** Spoof Windows PC headers so Discord recognizes mobile as Desktop */
@@ -18,7 +72,7 @@ export const settings = pluginStorage;
 // ─── Desktop Spoofing Constants ──────────────────────────────────────────────
 
 /**
- * Base64-encoded Discord Windows Desktop Super Properties (Discord Client 1.0.9175 on Windows 10 x64)
+ * Base64-encoded Discord Windows Desktop Super Properties (Discord Client on Windows 10 x64)
  */
 const DESKTOP_SUPER_PROPERTIES =
     "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCBDbGllbnQiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfdmVyc2lvbiI6IjEuMC45MTc1Iiwib3NfdmVyc2lvbiI6IjEwLjAuMjI2MzEiLCJvc19hcmNoIjoieDY0IiwiYXBwX2FyY2giOiJ4NjQiLCJzeXN0ZW1fbG9jYWxlIjoiZW4tVVMiLCJicm93c2VyX3VzZXJfYWdlbnQiOiJNb3ppbGxhLzUuMCAoV2luZG93cyBOVCAxMC4wOyBXaW42NDsgeDY0KSBBcHBsZVdlYktpdC81MzcuMzYgKEtIVE1MLCBsaWtlIEdlY2tvKSBkaXNjb3JkLzEuMC45MTc1IENocm9tZS8xMjguMC42NjEzLjE4NiBFbGVjdHJvbi8zMi4yLjcgU2FmYXJpLzUzNy4zNiIsImJyb3dzZXJfdmVyc2lvbiI6IjMyLjIuNyIsImNsaWVudF9idWlsZF9udW1iZXIiOjM1NTAwMCwibmF0aXZlX2J1aWxkX251bWJlciI6bnVsbCwiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbH0=";
@@ -79,7 +133,6 @@ async function discordApi(
         "Content-Type": "application/json",
     };
 
-    // Spoof Discord Desktop / PC headers
     if (pluginStorage.spoofPC) {
         headers["X-Super-Properties"] = DESKTOP_SUPER_PROPERTIES;
         headers["User-Agent"] = DESKTOP_USER_AGENT;
@@ -171,9 +224,11 @@ async function processQuest(quest: Quest): Promise<void> {
         `${secondsDone}/${secondsNeeded}s completed, ${remainingSeconds}s remaining (${totalHeartbeats} heartbeats).`,
     );
 
-    // Simulate running games and stream via FluxDispatcher (best-effort)
+    const FluxDispatcher = getFluxDispatcher();
+
+    // Dispatch running games & stream (best-effort)
     try {
-        FluxDispatcher.dispatch({
+        FluxDispatcher?.dispatch?.({
             type: "RUNNING_GAMES_CHANGE",
             removed: [],
             added: [{ id: applicationId, exePath: "C:\\Program Files\\Quest\\game.exe", name: "Quest" }],
@@ -181,7 +236,7 @@ async function processQuest(quest: Quest): Promise<void> {
         });
 
         if (isStream) {
-            FluxDispatcher.dispatch({
+            FluxDispatcher?.dispatch?.({
                 type: "STREAM_START",
                 streamType: "guild",
                 guildId: null,
@@ -191,10 +246,10 @@ async function processQuest(quest: Quest): Promise<void> {
             });
         }
     } catch {
-        // Flux games dispatcher might not exist on mobile, which is completely normal
+        // ignored
     }
 
-    // Send heartbeats with PC spoofed headers
+    // Heartbeat loop
     for (let i = 0; i < totalHeartbeats; i++) {
         if (!running) return;
         await sendHeartbeat(quest.id, streamKey);
@@ -207,9 +262,9 @@ async function processQuest(quest: Quest): Promise<void> {
     // Cleanup Flux dispatches
     try {
         if (isStream) {
-            FluxDispatcher.dispatch({ type: "STREAM_STOP", streamType: "guild" });
+            FluxDispatcher?.dispatch?.({ type: "STREAM_STOP", streamType: "guild" });
         }
-        FluxDispatcher.dispatch({
+        FluxDispatcher?.dispatch?.({
             type: "RUNNING_GAMES_CHANGE",
             removed: [{ id: applicationId, exePath: "C:\\Program Files\\Quest\\game.exe", name: "Quest" }],
             added: [],
@@ -222,25 +277,18 @@ async function processQuest(quest: Quest): Promise<void> {
     console.log(`[QAC] 🎉 Quest ${quest.id} completed!`);
 }
 
-// ─── Quest Fetcher ───────────────────────────────────────────────────────────
+// ─── Fetch Quests ────────────────────────────────────────────────────────────
 
-/**
- * Retrieves active quests:
- * 1. Checks internal QuestsStore
- * 2. Falls back to direct GET /quests/@me endpoint (with Desktop headers)
- */
 async function fetchQuests(): Promise<Quest[]> {
-    // Attempt 1: check store
     try {
         const QuestsStore = findByStoreName("QuestsStore");
         if (QuestsStore?.quests?.size > 0) {
             return Array.from(QuestsStore.quests.values()) as Quest[];
         }
     } catch {
-        // continue to direct API fetch
+        // fallback to direct API
     }
 
-    // Attempt 2: Direct API fetch with PC headers
     try {
         console.log("[QAC] Fetching active quests from /quests/@me...");
         const res = await discordApi("GET", "/quests/@me");
@@ -266,12 +314,10 @@ async function startQuests(): Promise<void> {
     running = true;
 
     try {
-        // Wait slightly for Discord mobile connection to settle
         await sleep(3000);
 
         let quests = await fetchQuests();
 
-        // If no quests found, wait and retry up to 3 times
         if (quests.length === 0) {
             for (let i = 0; i < 3 && quests.length === 0; i++) {
                 console.log(`[QAC] Retrying quest fetch (${i + 1}/3)...`);
@@ -285,13 +331,11 @@ async function startQuests(): Promise<void> {
             return;
         }
 
-        // Filter active/uncompleted quests
         const validQuests: Quest[] = [];
 
         for (const q of quests) {
             if (q.user_status?.completed_at !== null) continue;
 
-            // If not enrolled yet, auto-enroll if enabled
             if (q.user_status?.enrolled_at === null) {
                 if (pluginStorage.autoEnroll) {
                     const enrolled = await enrollQuest(q.id);
@@ -305,7 +349,6 @@ async function startQuests(): Promise<void> {
             }
         }
 
-        // Sort by expiration date
         validQuests.sort(
             (a, b) =>
                 new Date(a.user_status.expires_at).getTime() -
@@ -314,8 +357,8 @@ async function startQuests(): Promise<void> {
 
         const supported = validQuests.filter(
             (q) =>
-                q.config.taskConfig.taskName === "PLAY_ON_DESKTOP" ||
-                q.config.taskConfig.taskName === "STREAM_ON_DESKTOP",
+                q.config?.taskConfig?.taskName === "PLAY_ON_DESKTOP" ||
+                q.config?.taskConfig?.taskName === "STREAM_ON_DESKTOP",
         );
 
         if (supported.length === 0) {
@@ -344,9 +387,9 @@ async function startQuests(): Promise<void> {
     }
 }
 
-// ─── Plugin Export ───────────────────────────────────────────────────────────
+// ─── Plugin Object ───────────────────────────────────────────────────────────
 
-export default {
+const plugin = {
     onLoad() {
         console.log("[QAC] Quest Auto Completer loaded (PC Spoofing enabled).");
         startQuests();
@@ -355,4 +398,7 @@ export default {
         console.log("[QAC] Quest Auto Completer unloaded.");
         running = false;
     },
+    settings,
 };
+
+export default plugin;
