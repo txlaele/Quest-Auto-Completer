@@ -1,0 +1,13 @@
+{
+  "name": "Quest Auto Completer",
+  "description": "Auto complete Discord Quests on mobile",
+  "authors": [
+    {
+      "name": "Crxa",
+      "id": "000000000000000000"
+    }
+  ],
+  "id": "crxa.quest-auto-completer",
+  "version": "1.0.0",
+  "icon": "GameControllerIcon"
+}
